@@ -46,3 +46,4 @@ node_modules/
 # OCR temporary files
 temp/
 cache/
+data/
