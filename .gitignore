@@ -47,3 +47,9 @@ node_modules/
 temp/
 cache/
 data/
+
+# fichiers générés automatiquement
+passeports.csv
+
+# ou tous les csv générés
+*.csv

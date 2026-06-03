@@ -1,6 +1,8 @@
 import cv2
 import pytesseract
 import re
+import csv
+import os
 
 # ==================================================
 # CONFIG TESSERACT
@@ -210,6 +212,54 @@ def process_image(path):
         return {}
 
     return extract_fields(image)
+# ==================================================
+# SAUVEGARDE CSV
+# ==================================================
+
+def save_to_csv(data, filename="passeports.csv"):
+
+    file_exists = os.path.isfile(
+        filename
+    )
+
+    with open(
+        filename,
+        mode="a",
+        newline="",
+        encoding="utf-8"
+    ) as file:
+
+        writer = csv.writer(
+            file
+        )
+
+        # écrire entêtes seulement
+        # si fichier inexistant
+        if not file_exists:
+
+            writer.writerow([
+
+                "nom",
+                "prenom",
+                "nationalite",
+                "date_naissance",
+                "NO_passeport"
+
+            ])
+
+        writer.writerow([
+
+            data["nom"],
+            data["prenom"],
+            data["nationalite"],
+            data["date_naissance"],
+            data["NO_passeport"]
+
+        ])
+
+    print(
+        f"\nDonnées sauvegardées dans {filename}"
+    )
 
 
 # ==================================================
@@ -219,10 +269,18 @@ if __name__ == "__main__":
 
     img_path = "data/dataset/28.png"
 
-    result = process_image(img_path)
+    result = process_image(
+        img_path
+    )
 
     print("\n===== RESULTAT =====\n")
 
     for k, v in result.items():
 
-        print(f"{k:<20}: {v}")
+        print(
+            f"{k:<20}: {v}"
+        )
+
+    save_to_csv(
+        result
+    )
