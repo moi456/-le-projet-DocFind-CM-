@@ -1,165 +1,228 @@
 import cv2
 import pytesseract
 import re
-import os
 
-# ─────────────────────────────────────────────
-# CONFIG
-# ─────────────────────────────────────────────
-pytesseract.pytesseract.tesseract_cmd = r"C:\Program Files\Tesseract-OCR\tesseract.exe"
+# ==================================================
+# CONFIG TESSERACT
+# ==================================================
+pytesseract.pytesseract.tesseract_cmd = (
+    r"C:\Program Files\Tesseract-OCR\tesseract.exe"
+)
 
+# ==================================================
+# OCR ROI GENERIQUE
+# ==================================================
+def ocr_roi(image, h1, h2, w1, w2,
+            psm=7,
+            whitelist=None,
+            scale=4):
 
-# ─────────────────────────────────────────────
-# PREPROCESS
-# ─────────────────────────────────────────────
-def preprocess(image):
-    if image is None:
-        return None
-
-    gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-    gray = cv2.resize(gray, None, fx=2, fy=2, interpolation=cv2.INTER_CUBIC)
-    _, thresh = cv2.threshold(gray, 0, 255, cv2.THRESH_OTSU + cv2.THRESH_BINARY)
-    return thresh
-
-
-# ─────────────────────────────────────────────
-# OCR
-# ─────────────────────────────────────────────
-def extract_text(image):
-    return pytesseract.image_to_string(image, config="--oem 3 --psm 6")
-
-
-# ─────────────────────────────────────────────
-# CLEAN
-# ─────────────────────────────────────────────
-def clean_text(text):
-    return [l.strip() for l in text.split("\n") if len(l.strip()) > 1]
-
-
-# ─────────────────────────────────────────────
-# PASSPORT ROI (ROBUSTE GLOBAL)
-# ─────────────────────────────────────────────
-def extract_passport_number(image):
     h, w = image.shape[:2]
 
-    # ROI FIXE (TES COORDONNÉES %)
-    x1, x2 = 0.738, 0.873
-    y1, y2 = 0.559, 0.587
+    roi = image[
+        int(h*h1):int(h*h2),
+        int(w*w1):int(w*w2)
+    ]
 
-    roi = image[int(h*y1):int(h*y2), int(w*x1):int(w*x2)]
-
-    if roi.size == 0:
-        return ""
-
-    gray = cv2.cvtColor(roi, cv2.COLOR_BGR2GRAY)
-    gray = cv2.resize(gray, None, fx=4, fy=4, interpolation=cv2.INTER_CUBIC)
-    gray = cv2.GaussianBlur(gray, (3,3), 0)
-
-    _, th = cv2.threshold(gray, 0, 255, cv2.THRESH_OTSU + cv2.THRESH_BINARY)
-
-    text = pytesseract.image_to_string(
-        th,
-        config="--oem 3 --psm 7 -c tessedit_char_whitelist=0123456789"
+    gray = cv2.cvtColor(
+        roi,
+        cv2.COLOR_BGR2GRAY
     )
 
-    digits = re.sub(r"\D", "", text)
+    gray = cv2.resize(
+        gray,
+        None,
+        fx=scale,
+        fy=scale,
+        interpolation=cv2.INTER_CUBIC
+    )
 
-    return digits[:9] if len(digits) >= 9 else ""
+    gray = cv2.bilateralFilter(
+        gray,
+        9,
+        75,
+        75
+    )
+
+    _, thresh = cv2.threshold(
+        gray,
+        0,
+        255,
+        cv2.THRESH_BINARY + cv2.THRESH_OTSU
+    )
+
+    config = f"--oem 3 --psm {psm}"
+
+    if whitelist:
+        config += f" -c tessedit_char_whitelist={whitelist}"
+
+    txt = pytesseract.image_to_string(
+        thresh,
+        lang="eng",
+        config=config
+    )
+
+    return txt.strip()
 
 
-# ─────────────────────────────────────────────
-# FIELD EXTRACTION
-# ─────────────────────────────────────────────
-def extract_fields(lines, image):
-    data = {
-        "nom": "",
-        "prenom": "",
-        "nationalite": "",
-        "date_naissance": "",
-        "NO_passeport": ""
+# ==================================================
+# EXTRACTION NOM
+# ==================================================
+def extract_nom(image):
+
+    txt = ocr_roi(
+        image,
+        0.596, 0.620,
+        0.332, 0.561,
+        psm=7,
+        whitelist="ABCDEFGHIJKLMNOPQRSTUVWXYZ "
+    )
+
+    txt = re.sub(
+        r"[^A-Z ]",
+        "",
+        txt.upper()
+    )
+
+    return txt.strip()
+
+
+# ==================================================
+# EXTRACTION PRENOM
+# ==================================================
+def extract_prenom(image):
+
+    txt = ocr_roi(
+        image,
+        0.636, 0.661,
+        0.334, 0.584,
+        psm=7,
+        whitelist="ABCDEFGHIJKLMNOPQRSTUVWXYZ "
+    )
+
+    txt = re.sub(
+        r"[^A-Z ]",
+        "",
+        txt.upper()
+    )
+
+    return txt.strip()
+
+
+# ==================================================
+# NATIONALITE
+# ==================================================
+def extract_nationalite(image):
+
+    txt = ocr_roi(
+        image,
+        0.670, 0.698,
+        0.332, 0.695,
+        psm=7
+    )
+
+    txt = re.sub(
+        r"\s+",
+        " ",
+        txt
+    )
+
+    return txt.strip()
+
+
+# ==================================================
+# DATE NAISSANCE
+# ==================================================
+def extract_date(image):
+
+    txt = ocr_roi(
+        image,
+        0.710, 0.735,
+        0.326, 0.590,
+        psm=7
+    )
+
+    date = re.search(
+        r"\d{2}\s?[A-Za-z]{3}\s?\d{4}",
+        txt
+    )
+
+    return date.group() if date else txt
+
+
+# ==================================================
+# NUMERO PASSEPORT
+# ==================================================
+def extract_passport(image):
+
+    txt = ocr_roi(
+        image,
+        0.564, 0.590,
+        0.736, 0.916,
+        psm=7,
+        whitelist="0123456789"
+    )
+
+    digits = re.sub(
+        r"\D",
+        "",
+        txt
+    )
+
+    return digits[:9]
+
+
+# ==================================================
+# EXTRACTION COMPLETE
+# ==================================================
+def extract_fields(image):
+
+    return {
+
+        "nom":
+            extract_nom(image),
+
+        "prenom":
+            extract_prenom(image),
+
+        "nationalite":
+            extract_nationalite(image),
+
+        "date_naissance":
+            extract_date(image),
+
+        "NO_passeport":
+            extract_passport(image)
     }
 
-    text = " ".join(lines)
 
-    # ── MRZ (simple robuste)
-    mrz = [l for l in lines if "<<" in l]
-    if mrz:
-        parts = mrz[-1].split("<<")
-        if len(parts) >= 2:
-            data["nom"] = parts[0].replace("P<", "").replace("<", " ").strip()
-            data["prenom"] = parts[1].replace("<", " ").strip()
-
-    # ── NATIONALITÉ
-    nat = re.search(r"UNITED STATES OF AMERICA|CAMEROON|FRANCE|NIGERIA", text, re.I)
-    if nat:
-        data["nationalite"] = nat.group()
-
-    # ── DATE NAISSANCE
-    date = re.search(r"\d{2}\s[A-Z][a-z]{2}\s\d{4}", text)
-    if date:
-        data["date_naissance"] = date.group()
-
-    # ── PASSPORT (ROI PRIORITY)
-    passport = extract_passport_number(image)
-
-    if passport:
-        data["NO_passeport"] = passport
-    else:
-        fallback = re.search(r"\b\d{9}\b", text)
-        if fallback:
-            data["NO_passeport"] = fallback.group()
-
-    return data
-
-
-# ─────────────────────────────────────────────
+# ==================================================
 # PROCESS IMAGE
-# ─────────────────────────────────────────────
+# ==================================================
 def process_image(path):
+
     image = cv2.imread(path)
 
     if image is None:
-        print(f"[ERREUR] Image introuvable: {path}")
+
+        print("Image introuvable")
+
         return {}
 
-    processed = preprocess(image)
-    if processed is None:
-        return {}
-
-    text = extract_text(processed)
-    lines = clean_text(text)
-
-    return extract_fields(lines, image)
+    return extract_fields(image)
 
 
-# ─────────────────────────────────────────────
-# PROCESS FOLDER
-# ─────────────────────────────────────────────
-def process_folder(folder):
-    results = []
-
-    files = [f for f in os.listdir(folder)
-             if f.endswith((".png", ".jpg", ".jpeg"))]
-
-    for f in files:
-        path = os.path.join(folder, f)
-        print("Traitement:", f)
-
-        res = process_image(path)
-        res["fichier"] = f
-        results.append(res)
-
-    return results
-
-
-# ─────────────────────────────────────────────
-# MAIN TEST
-# ─────────────────────────────────────────────
+# ==================================================
+# TEST
+# ==================================================
 if __name__ == "__main__":
-    img_path = "data/dataset/30.png"
+
+    img_path = "data/dataset/28.png"
 
     result = process_image(img_path)
 
     print("\n===== RESULTAT =====\n")
+
     for k, v in result.items():
-        print(f"{k:<18}: {v}")
+
+        print(f"{k:<20}: {v}")

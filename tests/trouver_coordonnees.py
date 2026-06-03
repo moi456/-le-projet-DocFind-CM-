@@ -228,7 +228,7 @@ def process_folder(folder):
 # TEST
 # ─────────────────────────────────────────────
 if __name__ == "__main__":
-    img_path = "data/dataset/31.png"
+    img_path = "data/dataset/30.png"
 
     result = process_image(img_path)
 
