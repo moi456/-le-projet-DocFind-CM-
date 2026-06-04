@@ -3,25 +3,46 @@ import pytesseract
 import re
 import csv
 import os
-import ollama
 import json
+import ollama
 
-# ==================================================
-# CONFIG TESSERACT
-# ==================================================
+# ==========================================
+# CONFIG
+# ==========================================
 pytesseract.pytesseract.tesseract_cmd = (
     r"C:\Program Files\Tesseract-OCR\tesseract.exe"
 )
 
-# ==================================================
-# OCR ROI GENERIQUE
-# ==================================================
-def ocr_roi(image, h1, h2, w1, w2,
-            psm=7,
-            whitelist=None,
-            scale=4):
+DOSSIER_IMAGES = "data/dataset"
+CSV_FILE = "passeports.csv"
 
-    h, w = image.shape[:2]
+# ==========================================
+# TRI NATUREL
+# 1.png 2.png 10.png
+# ==========================================
+def natural_sort_key(text):
+
+    return [
+
+        int(c) if c.isdigit() else c.lower()
+
+        for c in re.split(r'(\d+)', text)
+
+    ]
+
+
+# ==========================================
+# OCR ROI
+# ==========================================
+def ocr_roi(
+        image,
+        h1,h2,w1,w2,
+        psm=7,
+        whitelist=None,
+        scale=4
+):
+
+    h,w = image.shape[:2]
 
     roi = image[
         int(h*h1):int(h*h2),
@@ -48,265 +69,251 @@ def ocr_roi(image, h1, h2, w1, w2,
         75
     )
 
-    _, thresh = cv2.threshold(
+    _,thresh = cv2.threshold(
         gray,
         0,
         255,
-        cv2.THRESH_BINARY + cv2.THRESH_OTSU
+        cv2.THRESH_BINARY+cv2.THRESH_OTSU
     )
 
     config = f"--oem 3 --psm {psm}"
 
     if whitelist:
-        config += f" -c tessedit_char_whitelist={whitelist}"
+
+        config += (
+            f" -c tessedit_char_whitelist="
+            f"{whitelist}"
+        )
 
     txt = pytesseract.image_to_string(
+
         thresh,
+
         lang="eng",
+
         config=config
+
     )
 
     return txt.strip()
 
 
-# ==================================================
-# EXTRACTION NOM
-# ==================================================
+# ==========================================
+# EXTRACTIONS
+# ==========================================
 def extract_nom(image):
 
     txt = ocr_roi(
+
         image,
-        0.596, 0.620,
-        0.332, 0.561,
-        psm=7,
+
+        0.596,0.620,
+
+        0.332,0.561,
+
         whitelist="ABCDEFGHIJKLMNOPQRSTUVWXYZ "
+
     )
 
-    txt = re.sub(
+    return re.sub(
+
         r"[^A-Z ]",
+
         "",
+
         txt.upper()
-    )
 
-    return txt.strip()
+    ).strip()
 
 
-# ==================================================
-# EXTRACTION PRENOM
-# ==================================================
 def extract_prenom(image):
 
     txt = ocr_roi(
+
         image,
-        0.636, 0.661,
-        0.334, 0.584,
-        psm=7,
+
+        0.636,0.661,
+
+        0.334,0.584,
+
         whitelist="ABCDEFGHIJKLMNOPQRSTUVWXYZ "
+
     )
 
-    txt = re.sub(
+    return re.sub(
+
         r"[^A-Z ]",
+
         "",
+
         txt.upper()
-    )
 
-    return txt.strip()
+    ).strip()
 
 
-# ==================================================
-# NATIONALITE
-# ==================================================
 def extract_nationalite(image):
 
     txt = ocr_roi(
+
         image,
-        0.670, 0.698,
-        0.332, 0.695,
-        psm=7
+
+        0.670,0.698,
+
+        0.332,0.695
+
     )
 
-    txt = re.sub(
+    return re.sub(
+
         r"\s+",
+
         " ",
+
         txt
+
+    ).strip()
+
+
+def extract_date(image):
+
+    txt = ocr_roi(
+
+        image,
+
+        0.710,0.735,
+
+        0.326,0.590
+
     )
 
     return txt.strip()
 
 
-# ==================================================
-# DATE NAISSANCE
-# ==================================================
-def extract_date(image):
-
-    txt = ocr_roi(
-        image,
-        0.710, 0.735,
-        0.326, 0.590,
-        psm=7
-    )
-
-    date = re.search(
-        r"\d{2}\s?[A-Za-z]{3}\s?\d{4}",
-        txt
-    )
-
-    return date.group() if date else txt
-
-
-# ==================================================
-# NUMERO PASSEPORT
-# ==================================================
 def extract_passport(image):
 
     txt = ocr_roi(
+
         image,
-        0.564, 0.590,
-        0.736, 0.916,
-        psm=7,
+
+        0.564,0.590,
+
+        0.736,0.916,
+
         whitelist="0123456789"
+
     )
 
-    digits = re.sub(
+    return re.sub(
+
         r"\D",
+
         "",
+
         txt
-    )
 
-    return digits[:9]
+    )[:9]
 
-# ==================================================
+
+# ==========================================
 # EXTRACTION COMPLETE
-# ==================================================
+# ==========================================
 def extract_fields(image):
 
     return {
 
-        "nom":
-            extract_nom(image),
+        "nom": extract_nom(image),
 
-        "prenom":
-            extract_prenom(image),
+        "prenom": extract_prenom(image),
 
-        "nationalite":
-            extract_nationalite(image),
+        "nationalite": extract_nationalite(image),
 
-        "date_naissance":
-            extract_date(image),
+        "date_naissance": extract_date(image),
 
-        "NO_passeport":
-            extract_passport(image)
+        "NO_passeport": extract_passport(image)
 
     }
-# ==================================================
-# EXTRACTION COMPLETE
-## ==================================================
-# NETTOYAGE OCR + OLLAMA
-# ==================================================
-def clean_with_llm(data):
 
-    # -------------------------
-    # PRE CLEAN
-    # -------------------------
-    preclean = {
 
-        "nom": re.sub(
-            r"[^A-Z ]",
-            "",
-            str(data.get("nom", "")).upper()
-        ).strip(),
+# ==========================================
+# CLEAN DATE
+# ==========================================
+def fix_date(date):
 
-        "prenom": re.sub(
-            r"[^A-Z ]",
-            "",
-            str(data.get("prenom", "")).upper()
-        ).strip(),
+    date = str(date)
 
-        "nationalite": re.sub(
-            r"\s+",
-            " ",
-            str(data.get(
-                "nationalite",
-                ""
-            ))
-        ).strip(),
+    corrections = {
 
-        "date_naissance": str(
-            data.get(
-                "date_naissance",
-                ""
-            )
-        ),
+        "IS ": "15 ",
 
-        "NO_passeport": re.sub(
-            r"\D",
-            "",
-            str(
-                data.get(
-                    "NO_passeport",
-                    ""
-                )
-            )
-        )[:9]
+        "I5 ": "15 ",
+
+        "l5 ": "15 ",
+
+        "Ol ": "01 ",
+
+        "O1 ": "01 ",
+
+        "O2 ": "02 ",
+
+        "]": "",
+
+        "[": ""
+
     }
 
-    # -------------------------
-    # REGEX CLEAN DATE
-    # -------------------------
-    date = preclean["date_naissance"]
+    for k,v in corrections.items():
 
-    date = date.replace(
-        "]",
-        ""
-    )
+        date = date.replace(
 
-    date = date.replace(
-        "[",
-        ""
-    )
+            k,
 
-    date = date.replace(
-        "IS ",
-        "15 "
-    )
+            v
 
-    date = date.replace(
-        "I5 ",
-        "15 "
-    )
-
-    date = date.replace(
-        "l5 ",
-        "15 "
-    )
+        )
 
     date = re.sub(
+
         r"\s+",
+
         " ",
+
         date
+
     )
 
-    preclean["date_naissance"] = date
+    match = re.search(
 
-    prompt = f"""
-Corrige seulement les erreurs OCR évidentes.
+        r"\d{1,2}\s[A-Za-z]{3}\s\d{4}",
 
-Retourne STRICTEMENT un JSON.
+        date
 
-Format obligatoire :
+    )
 
-{{
-"nom":"",
-"prenom":"",
-"nationalite":"",
-"date_naissance":"",
-"NO_passeport":""
-}}
+    return match.group() if match else date
 
-DONNEES :
 
-{json.dumps(preclean)}
-"""
+# ==========================================
+# OLLAMA
+# ==========================================
+def clean_with_llm(data):
+
+    preclean = {
+
+        "nom": data["nom"],
+
+        "prenom": data["prenom"],
+
+        "nationalite": data["nationalite"],
+
+        "date_naissance": fix_date(
+
+            data["date_naissance"]
+
+        ),
+
+        "NO_passeport": data["NO_passeport"]
+
+    }
 
     try:
 
@@ -317,246 +324,210 @@ DONNEES :
             messages=[
 
                 {
-                    "role": "user",
-                    "content": prompt
+
+                    "role":"user",
+
+                    "content":
+
+                    f"Retourne uniquement JSON:\n"
+
+                    f"{json.dumps(preclean)}"
+
                 }
 
             ],
 
             options={
 
-                "temperature": 0,
+                "temperature":0,
 
-                "num_predict": 80
+                "num_predict":50
 
             }
 
         )
 
-        text = response["message"]["content"]
+        txt = response["message"]["content"]
 
-        print("\nDEBUG OLLAMA:")
-        print(text)
-
-        match = re.search(
+        m = re.search(
 
             r"\{.*\}",
 
-            text,
+            txt,
 
             re.DOTALL
 
         )
 
-        if not match:
+        if m:
 
-            print(
-                "JSON introuvable -> OCR utilisé"
-            )
+            return json.loads(
 
-            return preclean
-
-        cleaned = json.loads(
-
-            match.group()
-
-        )
-
-        cleaned["nom"] = re.sub(
-
-            r"[^A-Z ]",
-
-            "",
-
-            str(
-                cleaned.get(
-                    "nom",
-                    preclean["nom"]
-                )
-            ).upper()
-
-        ).strip()
-
-        cleaned["prenom"] = re.sub(
-
-            r"[^A-Z ]",
-
-            "",
-
-            str(
-                cleaned.get(
-                    "prenom",
-                    preclean["prenom"]
-                )
-            ).upper()
-
-        ).strip()
-
-        cleaned["nationalite"] = re.sub(
-
-            r"\s+",
-
-            " ",
-
-            str(
-                cleaned.get(
-                    "nationalite",
-                    preclean["nationalite"]
-                )
-            )
-
-        ).strip()
-
-        cleaned["NO_passeport"] = re.sub(
-
-            r"\D",
-
-            "",
-
-            str(
-                cleaned.get(
-                    "NO_passeport",
-                    preclean["NO_passeport"]
-                )
-            )
-
-        )[:9]
-
-        date = str(
-
-            cleaned.get(
-
-                "date_naissance",
-
-                preclean[
-                    "date_naissance"
-                ]
+                m.group()
 
             )
 
-        )
+    except:
 
-        match = re.search(
+        pass
 
-            r"\d{1,2}\s[A-Za-z]{3}\s\d{4}",
+    return preclean
 
-            date
 
-        )
-
-        cleaned["date_naissance"] = (
-
-            match.group()
-
-            if match
-
-            else preclean[
-                "date_naissance"
-            ]
-
-        )
-
-        return cleaned
-
-    except Exception as e:
-
-        print(
-
-            "\nOllama ignoré :",
-
-            e
-
-        )
-
-        return preclean
-# ==================================================
-# PROCESS IMAGE
-# ==================================================
-def process_image(path):
-
-    image = cv2.imread(path)
-
-    if image is None:
-
-        print("Image introuvable")
-
-        return {}
-
-    raw_data = extract_fields(image)
-
-    clean_data = clean_with_llm(raw_data)
-
-    return clean_data
-    
-# ==================================================
-# SAUVEGARDE CSV
-# ==================================================
-
-def save_to_csv(data, filename="passeports.csv"):
-
-    file_exists = os.path.isfile(
-        filename
-    )
+# ==========================================
+# CSV
+# ==========================================
+def save_to_csv(rows):
 
     with open(
-        filename,
-        mode="a",
+
+        CSV_FILE,
+
+        "w",
+
         newline="",
+
         encoding="utf-8"
-    ) as file:
 
-        writer = csv.writer(
-            file
-        )
+    ) as f:
 
-        # écrire entêtes seulement
-        # si fichier inexistant
-        if not file_exists:
-
-            writer.writerow([
-
-                "nom",
-                "prenom",
-                "nationalite",
-                "date_naissance",
-                "NO_passeport"
-
-            ])
+        writer = csv.writer(f)
 
         writer.writerow([
 
-            data["nom"],
-            data["prenom"],
-            data["nationalite"],
-            data["date_naissance"],
-            data["NO_passeport"]
+            "fichier",
+
+            "extension",
+
+            "nom",
+
+            "prenom",
+
+            "nationalite",
+
+            "date_naissance",
+
+            "NO_passeport"
 
         ])
 
-    print(
-        f"\nDonnées sauvegardées dans {filename}"
-    )
+        for row in rows:
+
+            writer.writerow([
+
+                row["fichier"],
+
+                row["extension"],
+
+                row["nom"],
+
+                row["prenom"],
+
+                row["nationalite"],
+
+                row["date_naissance"],
+
+                row["NO_passeport"]
+
+            ])
 
 
-# ==================================================
-# TEST
-# ==================================================
-if __name__ == "__main__":
+# ==========================================
+# MAIN
+# ==========================================
+all_results = []
 
-    img_path = "data/dataset/41.png"
+images = sorted(
 
-    result = process_image(
-        img_path
-    )
+    [
 
-    print("\n===== RESULTAT =====\n")
+        f for f in os.listdir(
 
-    for k, v in result.items():
+            DOSSIER_IMAGES
 
-        print(
-            f"{k:<20}: {v}"
         )
 
-    save_to_csv(
-        result
+        if f.lower().endswith(
+
+            (".png",".jpg",".jpeg")
+
+        )
+
+    ],
+
+    key=natural_sort_key
+
+)
+
+print(
+
+    f"{len(images)} images trouvées"
+
+)
+
+for fichier in images:
+
+    chemin = os.path.join(
+
+        DOSSIER_IMAGES,
+
+        fichier
+
     )
+
+    image = cv2.imread(
+
+        chemin
+
+    )
+
+    if image is None:
+
+        continue
+
+    data = extract_fields(
+
+        image
+
+    )
+
+    data = clean_with_llm(
+
+        data
+
+    )
+
+    nom, ext = os.path.splitext(
+
+        fichier
+
+    )
+
+    data["fichier"] = nom
+    data["extension"] = ext
+
+    all_results.append(
+
+        data
+
+    )
+
+    print(
+
+        fichier,
+
+        "OK"
+
+    )
+
+save_to_csv(
+
+    all_results
+
+)
+
+print(
+
+    "\nCSV généré :", CSV_FILE
+
+)
