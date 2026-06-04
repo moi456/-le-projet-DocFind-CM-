@@ -3,6 +3,8 @@ import pytesseract
 import re
 import csv
 import os
+import ollama
+import json
 
 # ==================================================
 # CONFIG TESSERACT
@@ -173,7 +175,6 @@ def extract_passport(image):
 
     return digits[:9]
 
-
 # ==================================================
 # EXTRACTION COMPLETE
 # ==================================================
@@ -195,9 +196,279 @@ def extract_fields(image):
 
         "NO_passeport":
             extract_passport(image)
+
+    }
+# ==================================================
+# EXTRACTION COMPLETE
+## ==================================================
+# NETTOYAGE OCR + OLLAMA
+# ==================================================
+def clean_with_llm(data):
+
+    # -------------------------
+    # PRE CLEAN
+    # -------------------------
+    preclean = {
+
+        "nom": re.sub(
+            r"[^A-Z ]",
+            "",
+            str(data.get("nom", "")).upper()
+        ).strip(),
+
+        "prenom": re.sub(
+            r"[^A-Z ]",
+            "",
+            str(data.get("prenom", "")).upper()
+        ).strip(),
+
+        "nationalite": re.sub(
+            r"\s+",
+            " ",
+            str(data.get(
+                "nationalite",
+                ""
+            ))
+        ).strip(),
+
+        "date_naissance": str(
+            data.get(
+                "date_naissance",
+                ""
+            )
+        ),
+
+        "NO_passeport": re.sub(
+            r"\D",
+            "",
+            str(
+                data.get(
+                    "NO_passeport",
+                    ""
+                )
+            )
+        )[:9]
     }
 
+    # -------------------------
+    # REGEX CLEAN DATE
+    # -------------------------
+    date = preclean["date_naissance"]
 
+    date = date.replace(
+        "]",
+        ""
+    )
+
+    date = date.replace(
+        "[",
+        ""
+    )
+
+    date = date.replace(
+        "IS ",
+        "15 "
+    )
+
+    date = date.replace(
+        "I5 ",
+        "15 "
+    )
+
+    date = date.replace(
+        "l5 ",
+        "15 "
+    )
+
+    date = re.sub(
+        r"\s+",
+        " ",
+        date
+    )
+
+    preclean["date_naissance"] = date
+
+    prompt = f"""
+Corrige seulement les erreurs OCR évidentes.
+
+Retourne STRICTEMENT un JSON.
+
+Format obligatoire :
+
+{{
+"nom":"",
+"prenom":"",
+"nationalite":"",
+"date_naissance":"",
+"NO_passeport":""
+}}
+
+DONNEES :
+
+{json.dumps(preclean)}
+"""
+
+    try:
+
+        response = ollama.chat(
+
+            model="llama3.2:latest",
+
+            messages=[
+
+                {
+                    "role": "user",
+                    "content": prompt
+                }
+
+            ],
+
+            options={
+
+                "temperature": 0,
+
+                "num_predict": 80
+
+            }
+
+        )
+
+        text = response["message"]["content"]
+
+        print("\nDEBUG OLLAMA:")
+        print(text)
+
+        match = re.search(
+
+            r"\{.*\}",
+
+            text,
+
+            re.DOTALL
+
+        )
+
+        if not match:
+
+            print(
+                "JSON introuvable -> OCR utilisé"
+            )
+
+            return preclean
+
+        cleaned = json.loads(
+
+            match.group()
+
+        )
+
+        cleaned["nom"] = re.sub(
+
+            r"[^A-Z ]",
+
+            "",
+
+            str(
+                cleaned.get(
+                    "nom",
+                    preclean["nom"]
+                )
+            ).upper()
+
+        ).strip()
+
+        cleaned["prenom"] = re.sub(
+
+            r"[^A-Z ]",
+
+            "",
+
+            str(
+                cleaned.get(
+                    "prenom",
+                    preclean["prenom"]
+                )
+            ).upper()
+
+        ).strip()
+
+        cleaned["nationalite"] = re.sub(
+
+            r"\s+",
+
+            " ",
+
+            str(
+                cleaned.get(
+                    "nationalite",
+                    preclean["nationalite"]
+                )
+            )
+
+        ).strip()
+
+        cleaned["NO_passeport"] = re.sub(
+
+            r"\D",
+
+            "",
+
+            str(
+                cleaned.get(
+                    "NO_passeport",
+                    preclean["NO_passeport"]
+                )
+            )
+
+        )[:9]
+
+        date = str(
+
+            cleaned.get(
+
+                "date_naissance",
+
+                preclean[
+                    "date_naissance"
+                ]
+
+            )
+
+        )
+
+        match = re.search(
+
+            r"\d{1,2}\s[A-Za-z]{3}\s\d{4}",
+
+            date
+
+        )
+
+        cleaned["date_naissance"] = (
+
+            match.group()
+
+            if match
+
+            else preclean[
+                "date_naissance"
+            ]
+
+        )
+
+        return cleaned
+
+    except Exception as e:
+
+        print(
+
+            "\nOllama ignoré :",
+
+            e
+
+        )
+
+        return preclean
 # ==================================================
 # PROCESS IMAGE
 # ==================================================
@@ -211,7 +482,12 @@ def process_image(path):
 
         return {}
 
-    return extract_fields(image)
+    raw_data = extract_fields(image)
+
+    clean_data = clean_with_llm(raw_data)
+
+    return clean_data
+    
 # ==================================================
 # SAUVEGARDE CSV
 # ==================================================
@@ -267,7 +543,7 @@ def save_to_csv(data, filename="passeports.csv"):
 # ==================================================
 if __name__ == "__main__":
 
-    img_path = "data/dataset/28.png"
+    img_path = "data/dataset/41.png"
 
     result = process_image(
         img_path
