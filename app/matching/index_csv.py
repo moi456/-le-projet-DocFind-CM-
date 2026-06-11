@@ -8,15 +8,22 @@ from app.matching.vector_db import get_collection
 # CONFIG
 # ==========================================
 CSV_PATH = "passeports.csv"
+DB_PATH = "chroma_db"
+
 collection = get_collection()
 
-
 # ==========================================
-# RESET CHROMA DB (OPTIONNEL MAIS RECOMMANDÉ)
+# RESET CHROMA DB
 # ==========================================
 def reset_chroma():
-    print("⚠️ Supprime manuellement le dossier chroma_db avant de lancer")
+    db_path = "chroma_db"
 
+    if os.path.exists(db_path):
+        try:
+            shutil.rmtree(db_path)
+            print("🧹 Base supprimée")
+        except PermissionError:
+            print("❌ Base utilisée. Ferme Python et réessaie.")
 
 # ==========================================
 # TEXTE POUR EMBEDDING
@@ -29,7 +36,6 @@ Nationalite: {row['nationalite']}
 Date_naissance: {row['date_naissance']}
 Passeport: {row['NO_passeport']}
 """.strip()
-
 
 # ==========================================
 # INDEXATION
@@ -45,14 +51,10 @@ def index_csv():
         for row in reader:
 
             text = row_to_text(row)
-
-            # embedding
             vector = create_embedding(text)
 
-            # id unique
             doc_id = row["NO_passeport"]
 
-            # metadata complète ✔
             metadata = {
                 "nom": row["nom"],
                 "prenom": row["prenom"],
@@ -61,7 +63,6 @@ def index_csv():
                 "passeport": row["NO_passeport"]
             }
 
-            # stockage
             collection.add(
                 ids=[doc_id],
                 documents=[text],
@@ -74,13 +75,9 @@ def index_csv():
 
     print(f"\n🚀 Terminé ! {count} passeports indexés.")
 
-
 # ==========================================
 # MAIN
 # ==========================================
 if __name__ == "__main__":
-
-    # ⚠️ IMPORTANT: reset base avant réindexation
     reset_chroma()
-
     index_csv()

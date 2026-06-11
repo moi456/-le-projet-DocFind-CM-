@@ -1,28 +1,28 @@
 import chromadb
 
 # ==========================================
-# CLIENT CHROMADB
+# CLIENT CHROMADB (PERSISTENT)
 # ==========================================
-client = chromadb.PersistentClient(path="chroma_db")
-
+client = chromadb.PersistentClient(path="data/chroma_db")
 
 # ==========================================
-# COLLECTION
+# COLLECTION (COSINE SIMILARITY)
 # ==========================================
 collection = client.get_or_create_collection(
-    name="passeports"
+    name="passeports",
+    metadata={
+        "hnsw:space": "cosine"
+    }
 )
 
-
 # ==========================================
-# GET COLLECTION (IMPORTANT)
+# GET COLLECTION
 # ==========================================
 def get_collection():
     return collection
 
-
 # ==========================================
-# AJOUT DOCUMENT
+# ADD DOCUMENT
 # ==========================================
 def add_document(doc_id, text, embedding, metadata=None):
     collection.add(
@@ -32,9 +32,8 @@ def add_document(doc_id, text, embedding, metadata=None):
         metadatas=[metadata or {}]
     )
 
-
 # ==========================================
-# RECHERCHE
+# SEARCH
 # ==========================================
 def search(query_embedding, n_results=5):
     return collection.query(
