@@ -11,6 +11,9 @@ DOSSIER_IMAGES = "data/dataset"
 CSV_FILE = "passeports.csv"
 
 
+# =========================
+# SORTING UTILITY
+# =========================
 def natural_sort_key(text):
     return [
         int(c) if c.isdigit() else c.lower()
@@ -18,10 +21,12 @@ def natural_sort_key(text):
     ]
 
 
-def save_to_csv(rows):
+# =========================
+# SAVE CSV
+# =========================
+def save_to_csv(rows, output_file=CSV_FILE):
 
-    with open(CSV_FILE, "w", newline="", encoding="utf-8") as f:
-
+    with open(output_file, "w", newline="", encoding="utf-8") as f:
         writer = csv.writer(f)
 
         writer.writerow([
@@ -34,42 +39,59 @@ def save_to_csv(rows):
 
         for r in rows:
             writer.writerow([
-                r["fichier"], r["extension"],
-                r["nom"], r["prenom"],
-                r["nationalite"],
-                r["date_naissance"],
-                r["NO_passeport"]
+                r.get("fichier", ""),
+                r.get("extension", ""),
+                r.get("nom", ""),
+                r.get("prenom", ""),
+                r.get("nationalite", ""),
+                r.get("date_naissance", ""),
+                r.get("NO_passeport", "")
             ])
 
 
-all_results = []
+# =========================
+# MAIN PIPELINE (IMPORTANT)
+# =========================
+def process_dataset(dossier=DOSSIER_IMAGES):
+    """
+    Lance OCR + nettoyage + export CSV
+    NE S'EXÉCUTE PAS AUTOMATIQUEMENT
+    """
 
-images = sorted([
-    f for f in os.listdir(DOSSIER_IMAGES)
-    if f.lower().endswith((".png", ".jpg", ".jpeg"))
-], key=natural_sort_key)
+    all_results = []
 
-print(f"{len(images)} images trouvées")
+    images = sorted([
+        f for f in os.listdir(dossier)
+        if f.lower().endswith((".png", ".jpg", ".jpeg"))
+    ], key=natural_sort_key)
 
-for fichier in images:
+    print(f"{len(images)} images trouvées")
 
-    chemin = os.path.join(DOSSIER_IMAGES, fichier)
-    image = cv2.imread(chemin)
+    for fichier in images:
 
-    if image is None:
-        continue
+        chemin = os.path.join(dossier, fichier)
+        image = cv2.imread(chemin)
 
-    data = extract_fields(image)
-    data = clean_with_llm(data)
+        if image is None:
+            continue
 
-    nom, ext = os.path.splitext(fichier)
-    data["fichier"] = nom
-    data["extension"] = ext
+        # OCR extraction
+        data = extract_fields(image)
 
-    all_results.append(data)
+        # LLM cleaning
+        data = clean_with_llm(data)
 
-    print(fichier, "OK")
+        # filename metadata
+        nom, ext = os.path.splitext(fichier)
+        data["fichier"] = nom
+        data["extension"] = ext
 
-save_to_csv(all_results)
+        all_results.append(data)
 
-print("\nCSV généré :", CSV_FILE)
+        print(fichier, "OK")
+
+    save_to_csv(all_results)
+
+    print("\nCSV généré :", CSV_FILE)
+
+    return all_results
