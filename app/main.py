@@ -1,5 +1,6 @@
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
+from fastapi.middleware.cors import CORSMiddleware
 from app.routes import ocr, search
 
 app = FastAPI(
@@ -7,6 +8,16 @@ app = FastAPI(
     description="OCR + Matching + Document Search API",
     version="1.0.0"
 )
+
+# setup middleware
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=False,
+    allow_methods=["*"],
+    allow_headers=["*"]
+)
+
 
 # Exposer les images du dataset
 app.mount("/data/dataset", StaticFiles(directory="data/dataset"), name="dataset")
