@@ -12,7 +12,7 @@ class OCRResponse(BaseModel):
 class SearchResult(BaseModel):
     id: str
     score: float
-    image_path: str
+    image_path: Optional[str] = None
 
 
 class SearchResponse(BaseModel):

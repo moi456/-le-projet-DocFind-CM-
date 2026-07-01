@@ -13,6 +13,5 @@ class SearchRequest(BaseModel):
     nationalite: str
     numero_passeport: Optional[str] = None
 
-
 class PipelineRequest(BaseModel):
     image_path: str
