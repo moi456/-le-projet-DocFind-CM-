@@ -1,5 +1,6 @@
 from fastapi import APIRouter
 from app.models.requests import SearchRequest
+from app.models.responses import SearchResponse
 from app.services.search_service import search_documents
 from app.models.responses import SearchResponse
 
