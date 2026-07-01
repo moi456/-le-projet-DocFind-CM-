@@ -35,12 +35,13 @@ def search_passport(query, top_k=5):
         status = "MATCH_PROBABLE" if score >= STRONG_MATCH else "A_VERIFIER"
 
         formatted.append({
+            "id": metadata.get("passeport", ""),
             "score": score,
             "distance": round(distance, 4),
             "status": status,
             "metadata": metadata,
             "document": doc,
-            "image": metadata.get("image_path")
+            "image_path": metadata.get("image_path") or (f"/data/dataset/{metadata.get('passeport')}.png" if metadata.get("passeport") else None)
         })
 
     return sorted(formatted, key=lambda x: x["score"], reverse=True)
